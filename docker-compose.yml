@@ -29,7 +29,7 @@ services:
       - 28082:28082
       - 29092:29092
 
-    postgres:
+  postgres:
     image: postgres:18
     restart: on-failure
     environment:
