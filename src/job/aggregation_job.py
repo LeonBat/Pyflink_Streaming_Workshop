@@ -6,18 +6,16 @@ def create_events_source_kafka(t_env):
     table_name = "events"
     source_ddl = f"""
         CREATE TABLE {table_name} (
+            lpep_pickup_datetime STRING,
             PULocationID INTEGER,
-            DOLocationID INTEGER,
-            trip_distance DOUBLE,
-            total_amount DOUBLE,
-            tpep_pickup_datetime BIGINT,
-            event_timestamp AS TO_TIMESTAMP_LTZ(tpep_pickup_datetime, 3),
+            event_timestamp AS TO_TIMESTAMP(REPLACE(lpep_pickup_datetime, 'T', ' ')),
             WATERMARK for event_timestamp as event_timestamp - INTERVAL '5' SECOND
         ) WITH (
             'connector' = 'kafka',
             'properties.bootstrap.servers' = 'redpanda:29092',
-            'topic' = 'rides',
+            'topic' = 'green-trips',
             'scan.startup.mode' = 'earliest-offset',
+            'scan.bounded.mode' = 'latest-offset',
             'properties.auto.offset.reset' = 'earliest',
             'format' = 'json'
         );
@@ -27,13 +25,12 @@ def create_events_source_kafka(t_env):
 
 
 def create_events_aggregated_sink(t_env):
-    table_name = 'processed_events_aggregated'
+    table_name = 'green_trips_window_counts'
     sink_ddl = f"""
         CREATE TABLE {table_name} (
             window_start TIMESTAMP(3),
             PULocationID INT,
             num_trips BIGINT,
-            total_revenue DOUBLE,
             PRIMARY KEY (window_start, PULocationID) NOT ENFORCED
         ) WITH (
             'connector' = 'jdbc',
@@ -65,10 +62,9 @@ def log_aggregation():
         SELECT
             window_start,
             PULocationID,
-            COUNT(*) AS num_trips,
-            SUM(total_amount) AS total_revenue
+            COUNT(*) AS num_trips
         FROM TABLE(
-            TUMBLE(TABLE {source_table}, DESCRIPTOR(event_timestamp), INTERVAL '1' HOUR)
+            TUMBLE(TABLE {source_table}, DESCRIPTOR(event_timestamp), INTERVAL '5' MINUTES)
         )
         GROUP BY window_start, PULocationID;
 
